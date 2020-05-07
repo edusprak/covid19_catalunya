@@ -1,5 +1,3 @@
-
-
 library(shiny)
 library(shinycssloaders)
 library(leaflet)
