@@ -5,20 +5,23 @@ library(tidyverse)
 library(rgdal)
 library(stringi)
 library(mapview)
-library(plotly)
-library(Cairo)
+# library(plotly)
+# library(Cairo)
 
-options(shiny.usecairo=T)
+# options(shiny.usecairo=T)
 
-data <- read_csv("https://analisi.transparenciacatalunya.cat/api/views/xuwf-dxjd/rows.csv?accessType=DOWNLOAD&sorting=true", na = "")
+dades <- read_csv("https://analisi.transparenciacatalunya.cat/api/views/xuwf-dxjd/rows.csv?accessType=DOWNLOAD&sorting=true", na = "")
+save(dades, file = 'covid_cases.RData')
+
+# load('covid_cases.RData')
 
 # Canviem colnames
-colnames(data) <- stri_trans_general(sapply(colnames(data), function(x) trimws(strsplit(x, "/")[[1]][1])), "Latin-ASCII")
+colnames(dades) <- stri_trans_general(sapply(colnames(dades), function(x) trimws(strsplit(x, "/")[[1]][1])), "Latin-ASCII")
 
-data[, "TipusCasData"] <- parse_date(data$TipusCasData, "%d/%m/%Y")
+dades[, "TipusCasData"] <- parse_date(dades$TipusCasData, "%d/%m/%Y")
 
 # # Agrupem
-# data_agg <- data %>%
+# data_agg <- dades %>%
 #   group_by(TipusCasData, ABSCodi) %>%
 #   summarise(casos = sum(NumCasos))
 
@@ -27,19 +30,20 @@ data[, "TipusCasData"] <- parse_date(data$TipusCasData, "%d/%m/%Y")
 # shapeData <- readOGR("~/mapaABS",'ABS_2018', use_iconv=TRUE, encoding = 'UTF-8')
 # shapeData <- spTransform(shapeData, CRS("+proj=longlat +ellps=GRS80"))
 
-min_data <- min(data$TipusCasData)
-max_data <- max(data$TipusCasData)
+min_data <- min(dades$TipusCasData)
+max_data <- max(dades$TipusCasData)
 
-arees_salut <- unique(data$ABSDescripcio)
+arees_salut <- unique(dades$RegioSanitariaDescripcio)
 
-load("mapa_ABS.RData")
+# load("mapa_ABS.RData")
+load("mapa_regio.RData")
 
 
 # UI ----------------------------------------------------------------------
 
 ui <- fluidPage(
   
-  titlePanel("Número de casos de COVID19 a Catalunya per ABS (Àrea Bàsica de Salut)"),
+  titlePanel("Número de casos de COVID19 a Catalunya per Regió Sanitària"),
   
   tags$div(class="h3", checked=NA,
            "Font: ",
@@ -63,7 +67,7 @@ ui <- fluidPage(
   
   
   column(4, 
-  selectInput("abs", "Escull una Àrea Sanitària Bàsica:",
+  selectInput("abs", "Escull una Regió Sanitària:",
               arees_salut),
   # plotlyOutput('plot_casos_plotly')
   plotOutput('plot_casos',
@@ -84,52 +88,52 @@ server <- function(input, output, session) {
   
   output$distPlot <- renderLeaflet({
     
-    qui <- which(data$TipusCasData >= input$dateRange[1] & data$TipusCasData <= input$dateRange[2])
+    qui <- which(dades$TipusCasData >= input$dateRange[1] & dades$TipusCasData <= input$dateRange[2])
     
-    # qui <- which(data$TipusCasData >= input$time & data$TipusCasData <= input$time + 5)
+    # qui <- which(dades$TipusCasData >= input$time & dades$TipusCasData <= input$time + 5)
     
-    
-    data_agg <- data[qui, ] %>% 
-      group_by(ABSCodi, ABSDescripcio) %>% 
+    data_agg <- dades[qui, ] %>% 
+      group_by(RegioSanitariaCodi, RegioSanitariaDescripcio) %>% 
       summarise(casos = sum(NumCasos))
     
     # Fem match amb dades de data
-    m <- match(shapeData@data$CODIABS, data_agg$ABSCodi)
+    m <- match(mapa_regio_df@data$id_regio, data_agg$RegioSanitariaCodi)
     i <- which(!is.na(m))
     
-    shapeData@data[, c('casos', 'ABSDescripcio')] <- NA
-    shapeData@data[i, 'casos'] <- data_agg$casos[na.omit(m)]
-    shapeData@data[i, 'ABSDescripcio'] <- data_agg$ABSDescripcio[na.omit(m)]
-    
+    # mapa_regio_df@data[, c('casos', 'ABSDescripcio')] <- NA
+    mapa_regio_df@data[i, 'casos'] <- data_agg$casos[na.omit(m)]
+    # mapa_regio_df@data[i, 'ABSDescripcio'] <- data_agg$ABSDescripcio[na.omit(m)]
+    # 
 
-    shapeData %>% 
+    mapa_regio_df %>% 
       leaflet() %>% 
       addTiles() %>% 
       addPolygons(color = "#444444", weight = 1, smoothFactor = 0.5,
                   opacity = 1.0, fillOpacity = 0.5,
-                  fillColor = ~colorNumeric("YlOrRd", domain = shapeData@data$casos)(casos),
-                  popup = paste0("ABS: ", shapeData@data$ABSDescripcio, "<br>Número de casos: ", shapeData@data$casos)) %>%
+                  fillColor = ~colorNumeric("YlOrRd", domain = mapa_regio_df@data$casos)(casos),
+                  popup = paste0("Regió Sanitària: ", mapa_regio_df@data$nom_regio, "<br>Número de casos: ", mapa_regio_df@data$casos)) %>%
                   # popup = popupGraph(ggplot(shapeData@data) + geom_l)
-      addLegend(pal = colorNumeric("YlOrRd", domain = shapeData@data$casos), values = ~casos, opacity = 1)
+      addLegend(pal = colorNumeric("YlOrRd", domain = mapa_regio_df@data$casos), values = ~casos, opacity = 1)
     
   })
   
   output$plot_casos<-renderPlot({
-    data_agg <- data %>% 
-      group_by(ABSCodi, ABSDescripcio, TipusCasData) %>% 
+    data_agg <- dades %>% 
+      group_by(RegioSanitariaCodi, RegioSanitariaDescripcio, TipusCasData) %>% 
       summarise(casos = sum(NumCasos))
     
     aa <- data_agg %>%
-      filter(ABSDescripcio == input$abs)
+      filter(RegioSanitariaDescripcio == input$abs)
     
     ggplot(aa, aes(x=TipusCasData, y=casos)) +
       geom_line(color = 'red') +
       ggtitle(paste0("Casos detectats a ", input$abs)) +
-      labs(y="Número de casos detectats", x = "Data")
+      labs(y="Número de casos detectats", x = "Data") +
+      geom_smooth(method = "loess")
   })
   # 
   # output$plot_casos_plotly<-renderPlotly({
-  #   data_agg <- data %>% 
+  #   data_agg <- dades %>% 
   #     group_by(ABSCodi, ABSDescripcio, TipusCasData, SexeDescripcio) %>% 
   #     summarise(casos = sum(NumCasos))
   #   
@@ -147,8 +151,6 @@ server <- function(input, output, session) {
   # 
   
   # fig <- plot_ly(tg, x = ~dose, y = ~length, type = 'scatter', mode = 'lines', linetype = ~supp, color = I('black')) 
-  
-  
   
 }
 
