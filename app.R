@@ -7,7 +7,7 @@ library(stringi)
 library(mapview)
 library(lubridate)
 library(geoloc)
-# library(plotly)
+library(plotly)
 # library(Cairo)
 
 # options(shiny.usecairo=T)
@@ -67,10 +67,10 @@ ui <- fluidPage(
   # 
   #        # plotlyOutput('plot_casos_plotly')
   # ),
-  plotOutput('plot_casos'
-             # width = 720,
-             # height = 480
-             )
+  plotOutput('plot_casos')
+  
+  
+  # plotlyOutput('plot_casos_plotly')
   
 )
 
@@ -163,15 +163,115 @@ server <- function(input, output, session) {
     perc <- round((cont_ara/cont_promig - 1) * 100, 1)
     
     if (input$checkbox) {
-      aa <- aa_week
+      # Treiem l'ultima setmana perque pot estar incompleta i
+      # corromp la tendència actual
+      aa <- aa_week[-nrow(aa_week),]
     }
     
     ggplot(aa, aes(x=TipusCasData, y=casos)) +
       geom_line(color = 'red') +
-      ggtitle(paste0("Casos detectats a ", abs), subtitle = paste0('Els contagiats han augmentat un ', perc, "% en l'últim periode de ", n, ' dies repecte els anteriors ', k, ' periodes.')) +
+      ggtitle(paste0("Casos detectats a ", abs),
+              subtitle = paste0('Els contagis han augmentat un ', perc, "% \nen l'últim periode de ", n, ' dies \nrepecte els anteriors ', k, ' periodes.')) +
       # labs(y=paste0("Número de casos detectats (", input$detec, ")"), x = "Data") +
-      geom_smooth(method = "loess")
+      geom_smooth(method = "loess") +
+      xlab('Data') + 
+      ylab('Número de contagis')
   })
+  
+  output$plot_casos_plotly <- renderPlotly({
+    # Comprovem que estiguis a Catalunya
+    loc_catalunya <- FALSE
+    if (!is.null(input$geoloc_lon)) {
+      coords <- data.frame(x = as.numeric(input$geoloc_lon), y = as.numeric(input$geoloc_lat))
+      coordinates(coords) <- coords
+      proj4string(coords) <- proj4string(shapeData)
+      codi_abs <- as.character(over(coords, shapeData)[, 'CODIABS'])
+      if (!is.na(codi_abs)) {
+        loc_catalunya <- TRUE
+      }
+    }
+    
+    # Si estas a catalunya i no has informat cp, trobem ABS associada a la geoloc
+    
+    if (input$cp == "" & loc_catalunya) {
+      abs <- dades[match(codi_abs, dades$ABSCodi), ]$ABSDescripcio
+    } else {
+      # Validem que el cp sigui correcte
+      validate(
+        need(input$cp %in% cp_valids, 'El codi postal no és correcte.')
+      )
+      
+      # Trobem l'ABS del CP (aprox)
+      qui <- which(mapa@data$COD_POSTAL == input$cp)
+      
+      # posem punts a l'atzar en el cp
+      n <- 100
+      points_cp <- spsample(mapa[qui, ], n, 'regular')
+      
+      # centr_cp <- as.data.frame(coordinates(mapa[qui, ]))
+      # coordinates(centr_cp) <- centr_cp
+      proj4string(points_cp) <- proj4string(shapeData)
+      
+      codis_abs <- as.character(over(points_cp, shapeData)[, 'CODIABS'])
+      codi_abs <- names(which.max(table(codis_abs)))
+      abs <- dades[match(codi_abs, dades$ABSCodi), ]$ABSDescripcio
+    }
+    
+    data_agg <- dades %>% 
+      group_by(ABSCodi, ABSDescripcio, TipusCasData, TipusCasDescripcio) %>% 
+      summarise(casos = sum(NumCasos))
+    
+    
+    if (input$detec == 'Tots') {
+      aa_week <- data_agg %>%
+        filter(ABSDescripcio == abs) %>% 
+        group_by(TipusCasData = week(TipusCasData)) %>% 
+        summarise(casos = sum(casos))
+      aa <- data_agg %>%
+        filter(ABSDescripcio == abs) %>% 
+        group_by(TipusCasData) %>% 
+        summarise(casos = sum(casos))
+    } else {
+      aa_week <- data_agg %>%
+        filter(ABSDescripcio == abs & TipusCasDescripcio == input$detec) %>% 
+        group_by(TipusCasData = week(TipusCasData)) %>% 
+        summarise(casos = sum(casos))
+      aa <- data_agg %>%
+        filter(ABSDescripcio == abs & TipusCasDescripcio == input$detec) %>% 
+        group_by(TipusCasData) %>% 
+        summarise(casos = sum(casos))
+    }
+    
+    # Calculem contagis en els ultims n dies contra el promig en els últims k periodes 
+    # de n dies cadascun
+    
+    n <- 7
+    k <- 4
+    cont_ara <- sum(aa$casos[(nrow(aa)-n + 1):nrow(aa)])
+    cont_promig <- sum(aa$casos[(nrow(aa) - k*n + 1):(nrow(aa) - n)]) / k
+    perc <- round((cont_ara/cont_promig - 1) * 100, 1)
+    
+    if (input$checkbox) {
+      # Treiem l'ultima setmana perque pot estar incompleta i
+      # corromp la tendència actual
+      aa <- aa_week[-nrow(aa_week),]
+    }
+    
+    plot <- ggplot(aa, aes(x=TipusCasData, y=casos)) +
+      geom_line(color = 'red') +
+      ggtitle(paste0("Casos detectats a ", abs),
+              subtitle = paste0('Els contagis han augmentat un ', perc, "% \nen l'últim periode de ", n, ' dies \nrepecte els anteriors ', k, ' periodes.')) +
+      # labs(y=paste0("Número de casos detectats (", input$detec, ")"), x = "Data") +
+      geom_smooth(method = "loess") +
+      xlab('Data') + 
+      ylab('Número de contagis')
+    
+    plot %>%
+      ggplotly(tooltip = "tooltip") %>%
+      layout(dragmode = "select")
+    
+  })
+  
   
   
   
