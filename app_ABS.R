@@ -5,6 +5,7 @@ library(tidyverse)
 library(rgdal)
 library(stringi)
 library(mapview)
+library(lubridate)
 # library(plotly)
 # library(Cairo)
 
@@ -33,7 +34,8 @@ dades[, "TipusCasData"] <- parse_date(dades$TipusCasData, "%d/%m/%Y")
 min_data <- min(dades$TipusCasData)
 max_data <- max(dades$TipusCasData)
 
-arees_salut <- unique(dades$ABSDescripcio)
+arees_salut <- sort(unique(dades$ABSDescripcio))
+tipus_deteccio <- c('Tots', unique(dades$TipusCasDescripcio))
 
 load("mapa_ABS.RData")
 
@@ -60,7 +62,7 @@ ui <- fluidPage(
                  weekstart = 1,
                  format = "dd/mm/yyyy")
   ,
-  
+
   leafletOutput("distPlot", height = "95vh") %>% withSpinner()
   ),
   
@@ -68,6 +70,9 @@ ui <- fluidPage(
   column(4, 
   selectInput("abs", "Escull una Àrea Sanitària Bàsica:",
               arees_salut),
+  selectInput("detec", "Escull una tipus de deteccio:",
+              tipus_deteccio),
+  checkboxInput("checkbox", label = "Agregació setmanal", value = TRUE),
   # plotlyOutput('plot_casos_plotly')
   plotOutput('plot_casos',
              width = 720,
@@ -103,7 +108,6 @@ server <- function(input, output, session) {
     shapeData@data[, c('casos', 'ABSDescripcio')] <- NA
     shapeData@data[i, 'casos'] <- data_agg$casos[na.omit(m)]
     shapeData@data[i, 'ABSDescripcio'] <- data_agg$ABSDescripcio[na.omit(m)]
-    
 
     shapeData %>% 
       leaflet() %>% 
@@ -119,16 +123,27 @@ server <- function(input, output, session) {
   
   output$plot_casos<-renderPlot({
     data_agg <- dades %>% 
-      group_by(ABSCodi, ABSDescripcio, TipusCasData) %>% 
+      group_by(ABSCodi, ABSDescripcio, TipusCasData, TipusCasDescripcio) %>% 
       summarise(casos = sum(NumCasos))
     
-    aa <- data_agg %>%
-      filter(ABSDescripcio == input$abs)
+    
+    if (input$detec == 'Tots') {
+      aa <- data_agg %>%
+        filter(ABSDescripcio == input$abs) %>% 
+        group_by(TipusCasData = ifelse(input$checkbox, week(TipusCasData), TipusCasData)) %>% 
+        summarise(casos = sum(casos))
+    } else {
+      aa <- data_agg %>%
+        filter(ABSDescripcio == input$abs & TipusCasDescripcio == input$detec) %>% 
+        group_by(TipusCasData = ifelse(input$checkbox, week(TipusCasData), TipusCasData)) %>% 
+        summarise(casos = sum(casos))
+    }
     
     ggplot(aa, aes(x=TipusCasData, y=casos)) +
       geom_line(color = 'red') +
       ggtitle(paste0("Casos detectats a ", input$abs)) +
-      labs(y="Número de casos detectats", x = "Data")
+      labs(y=paste0("Número de casos detectats (", input$detec, ")"), x = "Data") +
+      geom_smooth(method = "loess")
   })
   # 
   # output$plot_casos_plotly<-renderPlotly({
