@@ -11,10 +11,10 @@ library(lubridate)
 
 # options(shiny.usecairo=T)
 
-# dades <- read_csv("https://analisi.transparenciacatalunya.cat/api/views/xuwf-dxjd/rows.csv?accessType=DOWNLOAD&sorting=true", na = "")
-# save(dades, file = 'covid_cases.RData')
+dades <- read_csv("https://analisi.transparenciacatalunya.cat/api/views/xuwf-dxjd/rows.csv?accessType=DOWNLOAD&sorting=true", na = "")
+save(dades, file = 'covid_cases.RData')
 
-load('covid_cases.RData')
+# load('covid_cases.RData')
 
 # Canviem colnames
 colnames(dades) <- stri_trans_general(sapply(colnames(dades), function(x) trimws(strsplit(x, "/")[[1]][1])), "Latin-ASCII")
